@@ -1,0 +1,7 @@
+node_modules/
+functions/node_modules/
+android/app/build/
+android/.gradle/
+android/build/
+*.log
+functions/.secret.local

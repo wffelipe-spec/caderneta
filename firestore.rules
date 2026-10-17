@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function logado() { return request.auth != null; }
+    function perfil() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function temPerfil() { return logado() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function membro(fid) { return temPerfil() && perfil().familiaId == fid; }
+    function dono(fid) { return membro(fid) && perfil().papel == "pai"; }
+
+    // Perfil de cada pessoa: família e papel (pai ou filho)
+    match /users/{uid} {
+      allow get: if logado() && (request.auth.uid == uid || membro(resource.data.familiaId));
+      allow list: if logado() && membro(resource.data.familiaId);
+      allow create: if logado() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(["familiaId", "nome", "papel", "codigo", "criadoEm"])
+        && request.resource.data.nome is string && request.resource.data.nome.size() > 0
+        && (
+          (request.resource.data.papel == "pai"
+            && get(/databases/$(database)/documents/familias/$(request.resource.data.familiaId)).data.donoUid == uid)
+          || (request.resource.data.papel == "filho"
+            && get(/databases/$(database)/documents/convites/$(request.resource.data.codigo)).data.familiaId == request.resource.data.familiaId)
+        );
+      allow update: if false;
+      allow delete: if dono(resource.data.familiaId) && resource.data.papel == "filho";
+    }
+
+    // Código de convite: quem sabe o código entra na família
+    match /convites/{codigo} {
+      allow get: if logado();
+      allow list: if false;
+      allow create: if logado()
+        && get(/databases/$(database)/documents/familias/$(request.resource.data.familiaId)).data.donoUid == request.auth.uid;
+      allow delete: if dono(resource.data.familiaId);
+    }
+
+    match /familias/{fid} {
+      allow get: if membro(fid) || (logado() && resource.data.donoUid == request.auth.uid);
+      allow create: if logado() && request.resource.data.donoUid == request.auth.uid;
+      allow update: if dono(fid) && request.resource.data.donoUid == resource.data.donoUid;
+
+      match /compras/{cid} {
+        allow read: if membro(fid);
+        allow create: if membro(fid) && request.resource.data.autorUid == request.auth.uid
+          && request.resource.data.status == "pendente" && request.resource.data.pago == false
+          && request.resource.data.codigo is string;
+        // Enquanto está pendente, quem lançou (ou o responsável) pode corrigir.
+        // Depois que o lojista responde, a compra fica travada: só dá para marcar como paga.
+        allow update: if (resource.data.status == "pendente"
+              && (dono(fid) || (membro(fid) && resource.data.autorUid == request.auth.uid))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["obs", "fotoPath"]))
+          || (dono(fid) && resource.data.status == "confirmada"
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["pago", "pagoEm"]));
+        allow delete: if resource.data.status != "confirmada" && resource.data.pago == false
+          && (dono(fid) || (membro(fid) && resource.data.autorUid == request.auth.uid));
+      }
+    }
+
+    // Link que o lojista abre para confirmar. O id é um código aleatório e longo,
+    // então só quem recebeu o link consegue abrir. O lojista não precisa de conta.
+    match /confirmacoes/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if membro(request.resource.data.familiaId) && token.size() >= 20
+        && request.resource.data.status == "pendente" && request.resource.data.codigo is string;
+      // Só a resposta do lojista pode mudar, uma única vez, com a hora do servidor.
+      allow update: if resource.data.status == "pendente"
+        && request.resource.data.status in ["confirmada", "contestada"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "confirmadoPor", "confirmadoEm", "nota"])
+        && request.resource.data.confirmadoEm == request.time
+        && request.resource.data.confirmadoPor is string && request.resource.data.confirmadoPor.size() > 0
+        && request.resource.data.confirmadoPor.size() <= 60
+        && (!("nota" in request.resource.data) || (request.resource.data.nota is string && request.resource.data.nota.size() <= 300));
+      allow delete: if membro(resource.data.familiaId) && resource.data.status == "pendente";
+    }
+
+    // Extrato do lojista: só o servidor escreve. Quem tem o link (a chave) consegue ler.
+    match /extratos/{chave}/compras/{cid} {
+      allow read: if chave.size() >= 20;
+      allow write: if false;
+    }
+  }
+}

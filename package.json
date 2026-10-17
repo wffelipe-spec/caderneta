@@ -1,0 +1,24 @@
+{
+  "name": "caderneta-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4",
+    "esbuild": "^0.28.2",
+    "firebase": "^12.19.0"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.34.0"
+  }
+}

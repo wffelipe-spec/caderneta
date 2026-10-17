@@ -1,0 +1,6 @@
+{
+  "appId": "br.familia.caderneta",
+  "appName": "Caderneta",
+  "webDir": "public",
+  "android": { "allowMixedContent": false }
+}
